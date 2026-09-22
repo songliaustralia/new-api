@@ -1,0 +1,48 @@
+name: Build and push VocentraAI New API image
+
+# Put this file at: .github/workflows/build-and-push.yml in your fork.
+# It builds the Docker image (same Dockerfile New API already ships with)
+# and pushes it to GitHub Container Registry (ghcr.io) — free, and uses
+# GitHub's built-in token, so no extra accounts or secrets are needed.
+#
+# It runs automatically whenever you push to the "vocentraai" branch.
+# You can also trigger it manually from the "Actions" tab on GitHub
+# (the workflow_dispatch trigger below adds a "Run workflow" button).
+
+on:
+  push:
+    branches: [vocentraai]
+  workflow_dispatch: {}
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/new-api
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
