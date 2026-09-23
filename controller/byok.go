@@ -271,3 +271,23 @@ func userHasAnyByokChannel(userId int) (bool, error) {
 	}
 	return false, nil
 }
+
+// userOwnedByokGroup returns the current user's personal BYOK group name
+// together with whether they have actually configured a provider channel in
+// it. The BYOK group (service.BuildByokGroup) is per-user and deliberately
+// never appears in service.GetUserUsableGroups' admin-curated map (see the
+// comment on GetUserGroups in controller/group.go), so any endpoint that
+// gates a requested group name against that map has to recognize a
+// configured BYOK customer's own group separately, or it looks unrecognized
+// to the very account it belongs to. GetUserGroups and GetUserModels
+// (controller/user.go) both need this same check.
+func userOwnedByokGroup(userId int) (string, bool, error) {
+	has, err := userHasAnyByokChannel(userId)
+	if err != nil {
+		return "", false, err
+	}
+	if !has {
+		return "", false, nil
+	}
+	return service.BuildByokGroup(userId), true, nil
+}

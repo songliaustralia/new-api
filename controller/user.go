@@ -96,7 +96,7 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	setupLogin(&user, nil, c)
+	setupLogin(&user, c)
 }
 
 // loginMethodFromContext 根据请求路径推导登录方式，用于登录审计日志。
@@ -144,11 +144,9 @@ func recordLoginAudit(user *model.User, c *gin.Context) {
 }
 
 // setupLogin evaluates the shared login policy after primary authentication.
-// Only a completed Passkey ceremony may go directly to session issuance. A
-// pending legacy GitHub binding rewrite travels inside the challenge and is
-// written only when the verification completes.
-func setupLogin(user *model.User, migration *service.LegacyGitHubMigration, c *gin.Context) {
-	challenge, err := service.StartLoginVerification(user, loginMethodFromContext(c), migration)
+// Only a completed Passkey ceremony may go directly to session issuance.
+func setupLogin(user *model.User, c *gin.Context) {
+	challenge, err := service.StartLoginVerification(user, loginMethodFromContext(c))
 	if err != nil {
 		writeSecurityOperationError(c, err)
 		return
@@ -623,6 +621,18 @@ func GetUserModels(c *gin.Context) {
 		return
 	}
 	groups := service.GetUserUsableGroups(user.Group)
+	// The BYOK group (service.BuildByokGroup) is per-user and never part of
+	// the admin-curated map above, so a configured BYOK customer's own group
+	// has to be recognized separately here. Without this, the playground's
+	// model list for their own group (GET /api/user/models?group=byok-uN)
+	// came back empty even though the underlying channel was fully
+	// configured with models — see userOwnedByokGroup in controller/byok.go
+	// and GetUserGroups' matching fix in controller/group.go.
+	byokGroup, hasByok, err := userOwnedByokGroup(id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	group := c.Query("group")
 	var groupsToQuery []string
 	switch {
@@ -630,12 +640,17 @@ func GetUserModels(c *gin.Context) {
 		for g := range groups {
 			groupsToQuery = append(groupsToQuery, g)
 		}
+		if hasByok {
+			groupsToQuery = append(groupsToQuery, byokGroup)
+		}
 	case group == "auto":
 		if _, ok := groups[group]; ok {
 			groupsToQuery = service.GetUserAutoGroup(user.Group)
 		}
 	default:
 		if _, ok := groups[group]; ok {
+			groupsToQuery = []string{group}
+		} else if hasByok && group == byokGroup {
 			groupsToQuery = []string{group}
 		}
 	}

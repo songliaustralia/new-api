@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -213,6 +214,59 @@ func TestGetUserModelsFiltersByRequestedGroup(t *testing.T) {
 	GetUserModels(vipContext)
 
 	require.Empty(t, decodeUserModelsResponse(t, vipRecorder))
+}
+
+// TestGetUserModelsRecognizesConfiguredByokGroup protects a third bug found
+// during BYOK deployment testing (see TestGetUserGroupsExposesByokGroupOnlyOnceConfigured
+// in byok_test.go for the first two, in controller/group.go and controller/byok.go).
+// The playground calls this endpoint with an explicit ?group=<the user's own
+// BYOK group>, but the "default" branch above only recognized groups present
+// in service.GetUserUsableGroups' admin-curated map — the exact map
+// GetUserGroups had to work around for the same reason — so a customer who
+// had fully and correctly configured their BYOK channel (right Models, right
+// abilities rows) still saw an empty model list in the playground: the group
+// name itself was rejected before the query ever reached the abilities table.
+func TestGetUserModelsRecognizesConfiguredByokGroup(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	userID := 1004
+	require.NoError(t, db.Create(&model.User{
+		Id:       userID,
+		Username: "byok-playground-user",
+		Password: "password",
+		Group:    "default",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+
+	byokGroup := service.BuildByokGroup(userID)
+
+	// Before any BYOK channel is configured, the endpoint must not treat an
+	// arbitrary unrecognized group name (this one included) as usable.
+	beforeRecorder := httptest.NewRecorder()
+	beforeCtx, _ := gin.CreateTestContext(beforeRecorder)
+	beforeCtx.Request = httptest.NewRequest(http.MethodGet, "/api/user/models?group="+byokGroup, nil)
+	beforeCtx.Set("id", userID)
+	GetUserModels(beforeCtx)
+	require.Empty(t, decodeUserModelsResponse(t, beforeRecorder))
+
+	channel := &model.Channel{
+		Type:   constant.ChannelTypeOpenAI,
+		Key:    "sk-test",
+		Status: common.ChannelStatusEnabled,
+		Group:  byokGroup,
+		Models: "gpt-4o,gpt-4o-mini",
+	}
+	require.NoError(t, db.Create(channel).Error)
+	require.NoError(t, db.Create(&[]model.Ability{
+		{Group: byokGroup, Model: "gpt-4o", ChannelId: channel.Id, Enabled: true},
+		{Group: byokGroup, Model: "gpt-4o-mini", ChannelId: channel.Id, Enabled: true},
+	}).Error)
+
+	afterRecorder := httptest.NewRecorder()
+	afterCtx, _ := gin.CreateTestContext(afterRecorder)
+	afterCtx.Request = httptest.NewRequest(http.MethodGet, "/api/user/models?group="+byokGroup, nil)
+	afterCtx.Set("id", userID)
+	GetUserModels(afterCtx)
+	require.ElementsMatch(t, []string{"gpt-4o", "gpt-4o-mini"}, decodeUserModelsResponse(t, afterRecorder))
 }
 
 func TestGetUserModelsExpandsAutoGroupsInConfiguredOrder(t *testing.T) {
@@ -517,7 +571,7 @@ func TestSetupLoginDoesNotTouchPasswordWhenPasswordFieldOmitted(t *testing.T) {
 			Role:        user.Role,
 			Status:      user.Status,
 			Group:       user.Group,
-		}, nil, c)
+		}, c)
 	})
 
 	recorder := httptest.NewRecorder()
