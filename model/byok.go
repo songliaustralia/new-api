@@ -51,11 +51,36 @@ func UpsertByokChannel(group string, channelType int, name string, key string, m
 	if err != nil {
 		return nil, err
 	}
+
+	// Route a BYOK channel through whatever base URL the platform's own
+	// enabled channels for this provider already use, instead of leaving it
+	// empty (which makes Channel.GetBaseURL() fall back to the provider's
+	// public endpoint, see model/channel.go). On a deployment where the
+	// server's own network route to that public endpoint is blocked (the
+	// reason an internal tunnel/proxy base URL is configured on the
+	// platform's own channels in the first place — see
+	// ai-api-relay.md/byok-per-customer-channel-procedure.md), a BYOK
+	// channel left on the public default fails outright with an upstream
+	// "Country, region, or territory not supported" error even though the
+	// customer's own key is perfectly valid: the request never has a chance
+	// to reach the provider with a key that would work. This is purely a
+	// routing setting, not a cost-driven restriction, so — unlike the model
+	// list (see controller/byok.go's SetByokKey) — it is meant to be copied
+	// uniformly onto every channel for this provider, BYOK included.
+	baseURL := firstEnabledBaseURLForType(channelType)
+
 	if existing != nil {
 		existing.Key = key
 		existing.Status = common.ChannelStatusEnabled
 		if models != "" {
 			existing.Models = models
+		}
+		// Re-saving a key is also the recovery path for a BYOK channel that
+		// was created before this fix existed and is still stuck on the
+		// public default: pick up the correct routing now rather than
+		// requiring the customer to delete and recreate the channel.
+		if baseURL != "" {
+			existing.BaseURL = &baseURL
 		}
 		if err := existing.Update(); err != nil {
 			return nil, err
@@ -66,7 +91,6 @@ func UpsertByokChannel(group string, channelType int, name string, key string, m
 	weight := uint(1)
 	priority := int64(0)
 	autoBan := 1
-	emptyBaseURL := ""
 	channel := &Channel{
 		Type:        channelType,
 		Key:         key,
@@ -74,7 +98,7 @@ func UpsertByokChannel(group string, channelType int, name string, key string, m
 		Name:        name,
 		Weight:      &weight,
 		CreatedTime: common.GetTimestamp(),
-		BaseURL:     &emptyBaseURL,
+		BaseURL:     &baseURL,
 		Models:      models,
 		Group:       group,
 		Priority:    &priority,
@@ -100,10 +124,15 @@ func DeleteByokChannel(group string, channelType int) error {
 }
 
 // GetFirstEnabledModelsForType returns the model allow-list of the first
-// enabled, non-BYOK channel of the given type. A new BYOK channel is seeded
-// with the same models the platform's own pooled channel already exposes for
-// that provider, instead of a hardcoded list here that would drift out of date
-// as new models ship.
+// enabled, non-BYOK channel of the given type. Note: as of the fix described
+// in controller/byok.go's SetByokKey, this is no longer used to seed a new
+// BYOK channel's model list (that always uses the full built-in catalog
+// instead, to avoid propagating a deliberate, cost-driven admin restriction
+// onto BYOK). It is kept here — unlike the model list, base URL routing
+// (below) legitimately does need to copy from an existing channel, and
+// having both lookups live in this file keeps the "copy from an existing
+// channel of this type" query logic in one place — but nothing currently
+// calls this function.
 func GetFirstEnabledModelsForType(channelType int) string {
 	var models string
 	err := DB.Model(&Channel{}).
@@ -115,4 +144,23 @@ func GetFirstEnabledModelsForType(channelType int) string {
 		return ""
 	}
 	return models
+}
+
+// firstEnabledBaseURLForType returns the BaseURL of the first enabled,
+// non-BYOK channel of the given type, or "" if there isn't one (or it's
+// blank). See the comment on UpsertByokChannel for why a BYOK channel's base
+// URL is deliberately copied from an existing admin channel, unlike its
+// model list.
+func firstEnabledBaseURLForType(channelType int) string {
+	var baseURL string
+	err := DB.Model(&Channel{}).
+		Where("type = ? and status = ? and "+commonGroupCol+" NOT LIKE ? and base_url IS NOT NULL and base_url != ''",
+			channelType, common.ChannelStatusEnabled, "byok-u%").
+		Order("id asc").
+		Limit(1).
+		Pluck("base_url", &baseURL).Error
+	if err != nil {
+		return ""
+	}
+	return baseURL
 }
