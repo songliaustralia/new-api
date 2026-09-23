@@ -26,6 +26,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relay"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
@@ -194,7 +195,17 @@ func SetByokKey(c *gin.Context) {
 		}
 	}
 
+	// Prefer copying the model list from an admin-configured channel of the
+	// same provider, if one exists (keeps BYOK in step with whatever the
+	// platform already curates). If none exists yet, fall back to this
+	// project's own built-in catalog for the provider instead of leaving the
+	// channel with no models at all: an empty Models field means the channel
+	// can never be routed to (see model/ability.go), so a customer who saved
+	// a key would have it silently do nothing.
 	models := model.GetFirstEnabledModelsForType(provider.channelType)
+	if models == "" {
+		models = defaultByokModels(provider.channelType)
+	}
 	name := fmt.Sprintf("byok-u%d-%s", userId, request.Provider)
 	if _, err := model.UpsertByokChannel(group, provider.channelType, name, key, models); err != nil {
 		common.ApiError(c, err)
@@ -225,6 +236,21 @@ func DeleteByokKey(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, gin.H{"provider": providerName})
+}
+
+// defaultByokModels falls back to this project's own built-in model catalog
+// for a provider (the same per-channel-type list relay.GetAdaptor(...).GetModelList()
+// feeds into the public /v1/models endpoint, see controller/model.go's init())
+// when no existing admin-configured channel of that type is available for
+// model.GetFirstEnabledModelsForType to copy from. Returns "" if the channel
+// type has no known API type mapping (should not happen for the providers in
+// byokProviders).
+func defaultByokModels(channelType int) string {
+	apiType, ok := common.ChannelType2APIType(channelType)
+	if !ok {
+		return ""
+	}
+	return strings.Join(relay.GetAdaptor(apiType).GetModelList(), ",")
 }
 
 // userHasAnyByokChannel reports whether the user has configured at least one

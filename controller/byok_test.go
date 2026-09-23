@@ -21,11 +21,13 @@ package controller
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relay"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/stretchr/testify/assert"
@@ -120,4 +122,36 @@ func TestGetUserGroupsExposesByokGroupOnlyOnceConfigured(t *testing.T) {
 	require.True(t, present, "the BYOK group must become selectable once a channel is configured")
 	assert.InDelta(t, 0, entry["ratio"], 0.0001, "BYOK usage must not carry a group-ratio markup")
 	assert.Equal(t, "自带密钥（BYOK）", entry["desc"])
+}
+
+// TestDefaultByokModels protects a second bug found during BYOK deployment
+// testing: SetByokKey (controller/byok.go) seeded a new BYOK channel's model
+// list purely by copying model.GetFirstEnabledModelsForType(channelType) —
+// i.e. by finding some other already-enabled, non-BYOK channel of the same
+// provider and reusing its Models field. On a platform with no such
+// admin-configured channel (or none enabled) for that provider, that lookup
+// returns "", so the BYOK channel was created with an empty model list. An
+// empty Models field means the channel can be routed to for no model at all
+// (see model/ability.go's per-model Ability rows), so the customer's saved
+// key silently did nothing: their token's group had no models to pick from.
+// defaultByokModels must fill that gap from this project's own built-in
+// per-provider catalog instead of leaving it empty.
+func TestDefaultByokModels(t *testing.T) {
+	t.Run("openai falls back to the built-in OpenAI catalog", func(t *testing.T) {
+		got := defaultByokModels(constant.ChannelTypeOpenAI)
+		require.NotEmpty(t, got, "an OpenAI BYOK channel must never end up with an empty model list")
+		want := strings.Join(relay.GetAdaptor(constant.APITypeOpenAI).GetModelList(), ",")
+		assert.Equal(t, want, got)
+	})
+
+	t.Run("anthropic falls back to the built-in Claude catalog", func(t *testing.T) {
+		got := defaultByokModels(constant.ChannelTypeAnthropic)
+		require.NotEmpty(t, got, "an Anthropic BYOK channel must never end up with an empty model list")
+		want := strings.Join(relay.GetAdaptor(constant.APITypeAnthropic).GetModelList(), ",")
+		assert.Equal(t, want, got)
+	})
+
+	t.Run("a channel type with no known API type mapping returns empty", func(t *testing.T) {
+		assert.Empty(t, defaultByokModels(-1))
+	})
 }
