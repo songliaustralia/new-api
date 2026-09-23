@@ -3,6 +3,7 @@ package controller
 import (
 	"net/http"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
@@ -44,6 +45,25 @@ func GetUserGroups(c *gin.Context) {
 			"desc":  setting.GetUsableGroupDescription("auto"),
 		}
 	}
+
+	// The user's personal BYOK group (see service.BuildByokGroup) is
+	// deliberately not part of the admin-configured UserUsableGroups list:
+	// it is per-user, not a group an admin curates. Expose it here instead,
+	// but only once the user has actually configured a channel in it —
+	// otherwise a token could be created that can never route anywhere.
+	hasByok, err := userHasAnyByokChannel(userId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if hasByok {
+		byokGroup := service.BuildByokGroup(userId)
+		usableGroups[byokGroup] = map[string]any{
+			"ratio": service.GetUserGroupRatio(userGroup, byokGroup),
+			"desc":  "自带密钥（BYOK）",
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",

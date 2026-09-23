@@ -226,3 +226,22 @@ func DeleteByokKey(c *gin.Context) {
 	}
 	common.ApiSuccess(c, gin.H{"provider": providerName})
 }
+
+// userHasAnyByokChannel reports whether the user has configured at least one
+// BYOK provider channel. GetUserGroups (controller/group.go) uses this to
+// decide whether the user's personal BYOK group should be exposed as a
+// selectable token group at all: without a configured channel, offering the
+// group would let a token be created that can never route anywhere.
+func userHasAnyByokChannel(userId int) (bool, error) {
+	group := service.BuildByokGroup(userId)
+	for _, provider := range byokProviders {
+		channel, err := model.GetChannelByGroupAndType(group, provider.channelType)
+		if err != nil {
+			return false, err
+		}
+		if channel != nil {
+			return true, nil
+		}
+	}
+	return false, nil
+}
