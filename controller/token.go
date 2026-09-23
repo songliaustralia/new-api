@@ -114,7 +114,7 @@ func setTokenAutoGroups(c *gin.Context, token *model.Token, groups []string) boo
 			return false
 		}
 		seen[group] = struct{}{}
-		if !service.IsUserSelectableGroup(userGroup, group) {
+		if !service.IsUserSelectableGroup(userGroup, group) && !service.IsUserOwnedByokGroup(c.GetInt("id"), group) {
 			common.ApiErrorI18n(c, i18n.MsgTokenAutoGroupsInvalid, map[string]any{"Group": group})
 			return false
 		}
@@ -122,6 +122,30 @@ func setTokenAutoGroups(c *gin.Context, token *model.Token, groups []string) boo
 
 	if err := token.SetAutoGroups(groups); err != nil {
 		common.ApiError(c, err)
+		return false
+	}
+	return true
+}
+
+// validateExplicitTokenGroup checks a token's single (non-"auto") group field
+// the same way setTokenAutoGroups checks each entry of an auto-groups list:
+// either it is one of the admin-curated selectable groups, or it is the
+// caller's own private BYOK group. An empty group ("no explicit group") is
+// always allowed and left to the existing default-group behavior. Both
+// AddToken and UpdateToken must call this before persisting a non-"auto"
+// token.Group, so a user cannot point their token at another user's channel
+// (BYOK-private or otherwise) by typing its group name directly.
+func validateExplicitTokenGroup(c *gin.Context, group string) bool {
+	if group == "" || group == "auto" {
+		return true
+	}
+	userGroup, err := getTokenRequestUserGroup(c)
+	if err != nil {
+		common.ApiError(c, err)
+		return false
+	}
+	if !service.IsUserSelectableGroup(userGroup, group) && !service.IsUserOwnedByokGroup(c.GetInt("id"), group) {
+		common.ApiErrorI18n(c, i18n.MsgTokenAutoGroupsInvalid, map[string]any{"Group": group})
 		return false
 	}
 	return true
@@ -320,6 +344,9 @@ func AddToken(c *gin.Context) {
 			return
 		}
 	} else {
+		if !validateExplicitTokenGroup(c, token.Group) {
+			return
+		}
 		token.CrossGroupRetry = false
 		_ = token.SetAutoGroups(nil)
 	}
@@ -437,6 +464,11 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.ModelLimitsEnabled = token.ModelLimitsEnabled
 		cleanToken.ModelLimits = token.ModelLimits
 		cleanToken.AllowIps = token.AllowIps
+		if token.Group != "auto" {
+			if !validateExplicitTokenGroup(c, token.Group) {
+				return
+			}
+		}
 		cleanToken.Group = token.Group
 		cleanToken.CrossGroupRetry = token.CrossGroupRetry
 		if token.Group != "auto" {

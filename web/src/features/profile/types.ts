@@ -25,6 +25,34 @@ import type { UserPermissions } from '@/stores/auth-store'
 /**
  * Generic API response
  */
+// ============================================================================
+// BYOK (Bring Your Own Key) Type Definitions
+// ============================================================================
+
+export type ByokProviderId = 'openai' | 'anthropic'
+
+export interface ByokProviderStatus {
+  configured: boolean
+  set_since?: number
+  key_masked?: string
+  models_count?: number
+}
+
+export type ByokProviderStatusMap = Partial<Record<ByokProviderId, ByokProviderStatus>>
+
+// BYOK is a subscription perk: `eligible` reflects whether the current user
+// currently has any active subscription (any plan tier) and is therefore
+// allowed to configure their own keys at all.
+export interface ByokStatus {
+  eligible: boolean
+  providers: ByokProviderStatusMap
+}
+
+export interface SetByokKeyRequest {
+  provider: ByokProviderId
+  key: string
+}
+
 export interface ApiResponse<T = unknown> {
   success: boolean
   message?: string

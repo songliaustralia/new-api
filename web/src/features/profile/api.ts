@@ -31,6 +31,9 @@ import type {
   CheckinResponse,
   AccountSecurityResult,
   EmailBindingFlow,
+  ByokStatus,
+  ByokProviderId,
+  SetByokKeyRequest,
 } from './types'
 
 // ============================================================================
@@ -303,5 +306,37 @@ export async function performCheckin(
     ? `/api/user/checkin?turnstile=${encodeURIComponent(turnstileToken)}`
     : '/api/user/checkin'
   const res = await api.post(url)
+  return res.data
+}
+
+// ============================================================================
+// BYOK (Bring Your Own Key) APIs
+// ============================================================================
+
+/**
+ * Get the current user's own configured providers. Never returns a usable key.
+ */
+export async function getByokStatus(): Promise<ApiResponse<ByokStatus>> {
+  const res = await api.get('/api/byok/')
+  return res.data
+}
+
+/**
+ * Create or replace the current user's own key for one provider.
+ */
+export async function setByokKey(
+  data: SetByokKeyRequest
+): Promise<ApiResponse<{ provider: ByokProviderId }>> {
+  const res = await api.post('/api/byok/', data)
+  return res.data
+}
+
+/**
+ * Remove the current user's own key for one provider.
+ */
+export async function deleteByokKey(
+  provider: ByokProviderId
+): Promise<ApiResponse<{ provider: ByokProviderId }>> {
+  const res = await api.delete(`/api/byok/${encodeURIComponent(provider)}`)
   return res.data
 }
