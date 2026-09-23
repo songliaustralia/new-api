@@ -155,3 +155,57 @@ func TestDefaultByokModels(t *testing.T) {
 		assert.Empty(t, defaultByokModels(-1))
 	})
 }
+
+// TestSetByokKeySeedsFullBuiltinCatalogEvenWhenAnAdminChannelIsRestricted
+// protects a fourth bug found during BYOK deployment testing: SetByokKey used
+// to prefer copying the model list from model.GetFirstEnabledModelsForType —
+// the first enabled, non-BYOK channel of the same provider type — whenever
+// one existed, on the theory that this kept BYOK in step with whatever the
+// platform already curates. In practice this silently propagated deliberate,
+// cost-driven restrictions onto BYOK channels: an admin may gate an
+// expensive flagship model to higher subscription tiers so a low-tier
+// customer can't drain the shared quota pool with a few requests (see
+// subscription-package-plan-design.md's "模型访问限制" section), but that
+// rationale never applies to BYOK — the customer's own upstream key pays for
+// every request, and the BYOK group's ratio is 0, so VocentraAI's quota pool
+// is never touched regardless of which model is called. SetByokKey must
+// always seed the full built-in catalog, never a copy of a possibly
+// restricted admin-configured channel.
+func TestSetByokKeySeedsFullBuiltinCatalogEvenWhenAnAdminChannelIsRestricted(t *testing.T) {
+	user := setupByokControllerTest(t, 4203)
+	require.NoError(t, model.DB.AutoMigrate(&model.UserSubscription{}))
+	require.NoError(t, model.DB.Create(&model.UserSubscription{
+		UserId:  user.Id,
+		Status:  "active",
+		EndTime: common.GetTimestamp() + 3600,
+	}).Error)
+
+	// An admin-configured, enabled, non-BYOK OpenAI channel whose model list
+	// is deliberately restricted, mirroring a real "-main" channel that
+	// excludes an expensive model from the shared, VocentraAI-billed pool.
+	require.NoError(t, model.DB.Create(&model.Channel{
+		Type:   constant.ChannelTypeOpenAI,
+		Key:    "sk-admin-main",
+		Status: common.ChannelStatusEnabled,
+		Group:  "default",
+		Models: "gpt-4o,gpt-4o-mini",
+	}).Error)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/byok/key", byokSetRequest{
+		Provider: "openai",
+		Key:      "sk-test-0123456789abcdef",
+	}, user.Id)
+	SetByokKey(ctx)
+	response := decodeAPIResponse(t, recorder)
+	require.True(t, response.Success, response.Message)
+
+	group := service.BuildByokGroup(user.Id)
+	channel, err := model.GetChannelByGroupAndType(group, constant.ChannelTypeOpenAI)
+	require.NoError(t, err)
+	require.NotNil(t, channel)
+
+	want := defaultByokModels(constant.ChannelTypeOpenAI)
+	require.NotEmpty(t, want)
+	assert.Equal(t, want, channel.Models, "a BYOK channel must always get the full built-in catalog, not a copy of a restricted admin channel")
+	assert.NotEqual(t, "gpt-4o,gpt-4o-mini", channel.Models, "the restricted admin channel's model list must not have been copied")
+}

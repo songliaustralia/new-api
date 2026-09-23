@@ -195,17 +195,28 @@ func SetByokKey(c *gin.Context) {
 		}
 	}
 
-	// Prefer copying the model list from an admin-configured channel of the
-	// same provider, if one exists (keeps BYOK in step with whatever the
-	// platform already curates). If none exists yet, fall back to this
-	// project's own built-in catalog for the provider instead of leaving the
-	// channel with no models at all: an empty Models field means the channel
-	// can never be routed to (see model/ability.go), so a customer who saved
-	// a key would have it silently do nothing.
-	models := model.GetFirstEnabledModelsForType(provider.channelType)
-	if models == "" {
-		models = defaultByokModels(provider.channelType)
-	}
+	// Always seed a BYOK channel from this project's own built-in model
+	// catalog for the provider, never by copying an admin-configured
+	// channel's (possibly deliberately restricted) model list.
+	//
+	// An earlier version of this code preferred copying from
+	// model.GetFirstEnabledModelsForType(provider.channelType) — the first
+	// enabled, non-BYOK channel of the same type — on the theory that this
+	// keeps BYOK "in step with whatever the platform already curates". In
+	// practice this backfired: an admin may restrict a channel's model list
+	// for cost-control reasons that only make sense when the platform's own
+	// API key is paying the bill (e.g. gating an expensive flagship model to
+	// higher subscription tiers so a low-tier customer can't drain the
+	// shared quota pool with a few requests — see
+	// subscription-package-plan-design.md's "模型访问限制" section). BYOK
+	// channels don't share that cost exposure at all: the customer's own
+	// upstream key pays for every request, and the BYOK group's ratio is 0,
+	// so VocentraAI's quota pool is never touched regardless of which model
+	// is called. Copying a cost-driven restriction onto a BYOK channel just
+	// hides models a customer has every right to call through their own key,
+	// with no offsetting benefit. So BYOK always gets the full built-in
+	// catalog instead.
+	models := defaultByokModels(provider.channelType)
 	name := fmt.Sprintf("byok-u%d-%s", userId, request.Provider)
 	if _, err := model.UpsertByokChannel(group, provider.channelType, name, key, models); err != nil {
 		common.ApiError(c, err)
@@ -238,12 +249,13 @@ func DeleteByokKey(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{"provider": providerName})
 }
 
-// defaultByokModels falls back to this project's own built-in model catalog
-// for a provider (the same per-channel-type list relay.GetAdaptor(...).GetModelList()
-// feeds into the public /v1/models endpoint, see controller/model.go's init())
-// when no existing admin-configured channel of that type is available for
-// model.GetFirstEnabledModelsForType to copy from. Returns "" if the channel
-// type has no known API type mapping (should not happen for the providers in
+// defaultByokModels returns this project's own built-in model catalog for a
+// provider — the same per-channel-type list relay.GetAdaptor(...).GetModelList()
+// feeds into the public /v1/models endpoint, see controller/model.go's
+// init(). SetByokKey uses this, unconditionally, to seed every BYOK
+// channel's model list (see the comment there for why it never copies from
+// an admin-configured channel instead). Returns "" if the channel type has
+// no known API type mapping (should not happen for the providers in
 // byokProviders).
 func defaultByokModels(channelType int) string {
 	apiType, ok := common.ChannelType2APIType(channelType)
