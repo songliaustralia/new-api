@@ -286,6 +286,11 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 		if !ok {
 			return nil, fmt.Errorf("expected Anthropic Messages request, got %T", result.Value)
 		}
+		// See the matching comment in relay/channel/aws/adaptor.go: this
+		// OpenAI-compatible path builds the Claude request independently of
+		// ConvertClaudeRequest, which is the only place auto prompt caching
+		// used to be applied.
+		claude.ApplyAutoPromptCaching(claudeReq)
 		vertexClaudeReq := copyRequest(claudeReq, anthropicVersion)
 		c.Set("request_model", claudeReq.Model)
 		info.UpstreamModelName = claudeReq.Model

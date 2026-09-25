@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	relaytypes "github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream"
 	"github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream/eventstreamapi"
@@ -449,4 +451,38 @@ func TestAwsStreamHandlerStopsAtClientCancellation(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("upstream producer did not observe the closed stream")
 	}
+}
+
+// TestConvertOpenAIRequestAppliesAutoPromptCaching guards the AWS Bedrock
+// channel against the same gap fixed for the direct Claude channel: clients
+// almost always reach this channel through the OpenAI-compatible
+// /v1/chat/completions endpoint (coding agents in particular), which this
+// method converts into a *dto.ClaudeRequest via service.ConvertRequest
+// independently of claude.Adaptor.ConvertClaudeRequest — the only place
+// auto prompt caching used to be applied. Before this fix, every request
+// routed through this channel via the OpenAI-compatible endpoint got no
+// cache_control marker at all, regardless of the feature being enabled.
+func TestConvertOpenAIRequestAppliesAutoPromptCaching(t *testing.T) {
+	settings := model_setting.GetClaudeSettings()
+	orig := settings.AutoCacheEnabled
+	settings.AutoCacheEnabled = true
+	t.Cleanup(func() { settings.AutoCacheEnabled = orig })
+
+	longSystem := strings.Repeat("You are a meticulous coding assistant. ", 200)
+	req := &dto.GeneralOpenAIRequest{
+		Model: awsTestModel,
+		Messages: []dto.Message{
+			{Role: "system", Content: longSystem},
+			{Role: "user", Content: "hello"},
+		},
+	}
+
+	out, err := (&Adaptor{}).ConvertOpenAIRequest(nil, newAwsTestRelayInfo(), req)
+	require.NoError(t, err)
+	converted, ok := out.(*dto.ClaudeRequest)
+	require.True(t, ok)
+	require.False(t, converted.IsStringSystem(), "a long system prompt arriving via the OpenAI-compatible endpoint on the AWS Bedrock channel must still get cached")
+	systemBlocks := converted.ParseSystem()
+	require.NotEmpty(t, systemBlocks)
+	assert.JSONEq(t, `{"type":"ephemeral"}`, string(systemBlocks[len(systemBlocks)-1].CacheControl))
 }

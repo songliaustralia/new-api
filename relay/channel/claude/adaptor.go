@@ -29,6 +29,7 @@ func (a *Adaptor) ConvertGeminiRequest(c *gin.Context, info *relaycommon.RelayIn
 	if err != nil {
 		return nil, err
 	}
+	applyAutoPromptCachingToResultValue(result.Value)
 	return result.Value, nil
 }
 
@@ -124,6 +125,7 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	if err != nil {
 		return nil, err
 	}
+	applyAutoPromptCachingToResultValue(result.Value)
 	return result.Value, nil
 }
 
@@ -145,6 +147,7 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 	if !ok {
 		return nil, fmt.Errorf("expected Anthropic Messages request, got %T", result.Value)
 	}
+	applyAutoPromptCaching(claudeRequest)
 	return claudeRequest, nil
 }
 

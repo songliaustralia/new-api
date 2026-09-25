@@ -41,6 +41,30 @@ const (
 // its choices and to stay under Anthropic's four-breakpoint-per-request
 // cap (this function uses at most two: one for the system prompt, one for
 // the message history).
+// ApplyAutoPromptCaching is the exported entry point for other channel
+// packages (AWS Bedrock, Vertex AI) that build their own *dto.ClaudeRequest
+// from a non-Claude-native input (OpenAI chat/completions, OpenAI Responses,
+// Gemini) via service.ConvertRequest instead of going through this
+// package's Adaptor.ConvertClaudeRequest. Those conversions never called
+// applyAutoPromptCaching on their own, so auto-caching only ever fired for
+// clients hitting the Claude-native /v1/messages endpoint directly — any
+// client using an OpenAI-compatible endpoint (as most coding agents do) got
+// no cache_control markers at all, regardless of which upstream channel
+// (direct Claude, AWS Bedrock, Vertex AI) the request was routed to.
+func ApplyAutoPromptCaching(request *dto.ClaudeRequest) {
+	applyAutoPromptCaching(request)
+}
+
+// applyAutoPromptCachingToResultValue is a convenience wrapper for call
+// sites in this package that hold a service.ConvertRequest result as `any`
+// (ConvertGeminiRequest, ConvertOpenAIRequest) rather than an already
+// type-asserted *dto.ClaudeRequest. It is a no-op for any other type.
+func applyAutoPromptCachingToResultValue(value any) {
+	if request, ok := value.(*dto.ClaudeRequest); ok {
+		applyAutoPromptCaching(request)
+	}
+}
+
 func applyAutoPromptCaching(request *dto.ClaudeRequest) {
 	if request == nil {
 		return

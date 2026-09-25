@@ -135,6 +135,13 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	if !ok {
 		return nil, fmt.Errorf("expected Anthropic Messages request, got %T", result.Value)
 	}
+	// ConvertClaudeRequest (called from the Claude-native /v1/messages path)
+	// applies auto prompt caching itself, but this OpenAI-compatible path
+	// builds the Claude request independently via service.ConvertRequest and
+	// never went through that code, so requests arriving via an
+	// OpenAI-compatible client (e.g. most coding agents) got no cache_control
+	// markers even after the feature was deployed. Apply it explicitly here.
+	claude.ApplyAutoPromptCaching(claudeReq)
 	info.UpstreamModelName = claudeReq.Model
 	return claudeReq, err
 }

@@ -367,3 +367,69 @@ func TestConvertClaudeRequestAppliesAutoPromptCaching(t *testing.T) {
 	require.Len(t, systemBlocks, 1)
 	assert.JSONEq(t, `{"type":"ephemeral"}`, string(systemBlocks[0].CacheControl))
 }
+
+// TestConvertOpenAIRequestAppliesAutoPromptCaching guards against the gap
+// that let auto prompt caching ship without ever actually applying to real
+// traffic: ConvertClaudeRequest (covered above) only runs for clients that
+// hit the Claude-native /v1/messages endpoint directly. Coding agents (and
+// most other clients) instead call the OpenAI-compatible
+// /v1/chat/completions endpoint, which is converted to a *dto.ClaudeRequest
+// by this method via service.ConvertRequest — a completely separate code
+// path that, before this test existed, never called applyAutoPromptCaching
+// at all, so no client using the OpenAI-compatible endpoint ever got a
+// cache_control marker, no matter which upstream channel (direct Claude,
+// AWS Bedrock, Vertex AI) handled the request.
+func TestConvertOpenAIRequestAppliesAutoPromptCaching(t *testing.T) {
+	enableClaudeAutoCache(t, true)
+
+	longSystem := strings.Repeat("You are a meticulous coding assistant. ", 200)
+	req := &dto.GeneralOpenAIRequest{
+		Model: "claude-sonnet-4-5",
+		Messages: []dto.Message{
+			{Role: "system", Content: longSystem},
+			{Role: "user", Content: "hello"},
+		},
+	}
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "claude-sonnet-4-5",
+		ChannelMeta: &relaycommon.ChannelMeta{
+			UpstreamModelName: "claude-sonnet-4-5",
+		},
+	}
+
+	out, err := (&Adaptor{}).ConvertOpenAIRequest(nil, info, req)
+	require.NoError(t, err)
+	converted, ok := out.(*dto.ClaudeRequest)
+	require.True(t, ok)
+	require.False(t, converted.IsStringSystem(), "a long system prompt arriving via the OpenAI-compatible endpoint must still get cached")
+	systemBlocks := converted.ParseSystem()
+	require.NotEmpty(t, systemBlocks)
+	assert.JSONEq(t, `{"type":"ephemeral"}`, string(systemBlocks[len(systemBlocks)-1].CacheControl))
+}
+
+// TestConvertGeminiRequestAppliesAutoPromptCaching is the Gemini-compatible
+// counterpart of the OpenAI-compatible test above: ConvertGeminiRequest is
+// another entry point that builds a *dto.ClaudeRequest independently of
+// ConvertClaudeRequest and had the same gap.
+func TestConvertGeminiRequestAppliesAutoPromptCaching(t *testing.T) {
+	enableClaudeAutoCache(t, true)
+
+	longSystemText := strings.Repeat("You are a meticulous coding assistant. ", 200)
+	req := &dto.GeminiChatRequest{
+		Contents: []dto.GeminiChatContent{
+			{Role: "user", Parts: []dto.GeminiPart{{Text: "hello"}}},
+		},
+		SystemInstructions: &dto.GeminiChatContent{
+			Parts: []dto.GeminiPart{{Text: longSystemText}},
+		},
+	}
+
+	out, err := (&Adaptor{}).ConvertGeminiRequest(nil, geminiToClaudeInfo(), req)
+	require.NoError(t, err)
+	converted, ok := out.(*dto.ClaudeRequest)
+	require.True(t, ok)
+	require.False(t, converted.IsStringSystem(), "a long system prompt arriving via the Gemini-compatible endpoint must still get cached")
+	systemBlocks := converted.ParseSystem()
+	require.NotEmpty(t, systemBlocks)
+	assert.JSONEq(t, `{"type":"ephemeral"}`, string(systemBlocks[len(systemBlocks)-1].CacheControl))
+}
