@@ -133,6 +133,16 @@ func setupTokenControllerTestDB(t *testing.T) *gorm.DB {
 		Password: "password",
 		Group:    "default",
 		Status:   common.UserStatusEnabled,
+		// AffCode has a unique index (model/user.go), and the zero value ("")
+		// is not exempt from it in SQLite the way NULL would be. This helper
+		// is shared by other files in this package (e.g.
+		// token_auto_groups_test.go's setupTokenAutoGroupsControllerTest,
+		// which also calls setupTokenControllerTestDB and then creates its
+		// own user without setting AffCode either) — two users left with the
+		// same "" default in one test DB collide on that unique index. Give
+		// this seeded user an explicit, distinct value so it never collides
+		// with another caller's unset ("") default.
+		AffCode: "token-ctrl-test-seed",
 	}).Error)
 
 	// validateExplicitTokenGroup additionally requires the group to exist in
