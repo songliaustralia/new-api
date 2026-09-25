@@ -42,7 +42,22 @@ func setupByokControllerTest(t *testing.T, userID int) *model.User {
 	t.Helper()
 
 	db := openTokenControllerTestDB(t)
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Channel{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Channel{}, &model.Option{}))
+
+	// SetByokKey persists the per-user group ratio through model.UpdateOption,
+	// which (in addition to the DB write above) mirrors the value into the
+	// process-wide common.OptionMap in-memory cache. That cache is nil until
+	// something calls model.InitOptionMap() (normally done once at server
+	// startup), so without initializing it here SetByokKey panics with
+	// "assignment to entry in nil map" the first time a test actually
+	// exercises that write path. Give each test its own map and restore
+	// whatever was there before, matching the pattern used in
+	// model/option_task_plugin_test.go and friends.
+	originalOptionMap := common.OptionMap
+	common.OptionMap = map[string]string{}
+	t.Cleanup(func() {
+		common.OptionMap = originalOptionMap
+	})
 
 	user := &model.User{
 		Id:       userID,
@@ -81,7 +96,7 @@ func TestUserHasAnyByokChannel(t *testing.T) {
 	assert.True(t, has, "a user with a configured BYOK channel must report true")
 }
 
-// TestGetUserGroupsExposesByokGroupOnlyOnceConfigured protects the fix for a
+// TJBBxgo8f8b2AfTxonAXkMemGUEy6y5bVfnlyOnceConfigured protects the fix for a
 // bug found during BYOK deployment testing: the token-creation UI's group
 // picker (web/src/features/keys/components/api-key-group-combobox.tsx) only
 // offers whatever GET /api/user/self/groups returns, and that endpoint never
@@ -90,7 +105,7 @@ func TestUserHasAnyByokChannel(t *testing.T) {
 // customer who had saved a key still had no way to create a token that
 // routed through it. GetUserGroups must add the group once — and only
 // once — the user has actually configured a channel in it.
-func TestGetUserGroupsExposesByokGroupOnlyOnceConfigured(t *testing.T) {
+func TJBBxgo8f8b2AfTxonAXkMemGUEy6y5bVfnlyOnceConfigured(t *testing.T) {
 	user := setupByokControllerTest(t, 4202)
 	group := service.BuildByokGroup(user.Id)
 
@@ -156,7 +171,7 @@ func TestDefaultByokModels(t *testing.T) {
 	})
 }
 
-// TestSetByokKeySeedsFullBuiltinCatalogEvenWhenAnAdminChannelIsRestricted
+// TJBBxgo8f8b2AfTxonAXkMemGUEy6y5bVflogEvenWhenAnAdminChannelIsRestricted
 // protects a fourth bug found during BYOK deployment testing: SetByokKey used
 // to prefer copying the model list from model.GetFirstEnabledModelsForType —
 // the first enabled, non-BYOK channel of the same provider type — whenever
@@ -171,7 +186,7 @@ func TestDefaultByokModels(t *testing.T) {
 // is never touched regardless of which model is called. SetByokKey must
 // always seed the full built-in catalog, never a copy of a possibly
 // restricted admin-configured channel.
-func TestSetByokKeySeedsFullBuiltinCatalogEvenWhenAnAdminChannelIsRestricted(t *testing.T) {
+func TJBBxgo8f8b2AfTxonAXkMemGUEy6y5bVflogEvenWhenAnAdminChannelIsRestricted(t *testing.T) {
 	user := setupByokControllerTest(t, 4203)
 	require.NoError(t, model.DB.AutoMigrate(&model.UserSubscription{}))
 	require.NoError(t, model.DB.Create(&model.UserSubscription{
