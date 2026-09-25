@@ -337,7 +337,7 @@ func getTokenAutoGroupsColumnType(t *testing.T, db *gorm.DB, dialect string) str
 	}
 }
 
-func runTokenMigrationCompatibilityTest(t *testing.T, db *gorm.DB, dialect string, managedTokensTable *bool) {
+func runTokenMigrationCompatTest(t *testing.T, db *gorm.DB, dialect string, managedTokensTable *bool) {
 	t.Helper()
 
 	legacyKey := strings.Repeat("a", 48)
@@ -429,7 +429,7 @@ func runTokenMigrationCompatibilityTest(t *testing.T, db *gorm.DB, dialect strin
 	}
 }
 
-func TJBBxgo8f8b2AfTxonAXkMemGUEy6y5bVfKeyColumn(t *testing.T) {
+func TestTokenAutoMigrateVarcharKey(t *testing.T) {
 	db := setupTokenControllerTestDB(t)
 
 	if got := getTokenKeyColumnType(t, db, "sqlite"); got != "varchar(128)" {
@@ -440,32 +440,32 @@ func TJBBxgo8f8b2AfTxonAXkMemGUEy6y5bVfKeyColumn(t *testing.T) {
 	}
 }
 
-func TJBBxgo8f8b2AfTxonAXkMemGUEy6y5bVfhar128(t *testing.T) {
+func TestTokenMigrateChar48Varchar(t *testing.T) {
 	db := openTokenControllerTestDB(t)
-	runTokenMigrationCompatibilityTest(t, db, "sqlite", nil)
+	runTokenMigrationCompatTest(t, db, "sqlite", nil)
 }
 
-func TJBBxgo8f8b2AfTxonAXkMemGUEy6y5bVfhar128MySQL(t *testing.T) {
+func TestTokenMigrateChar48VarcharMy(t *testing.T) {
 	dsn := os.Getenv("TEST_MYSQL_DSN")
 	if dsn == "" {
 		t.Skip("set TEST_MYSQL_DSN to run mysql migration compatibility test")
 	}
 
 	db, managedTokensTable := openTokenControllerExternalDB(t, "mysql", dsn)
-	runTokenMigrationCompatibilityTest(t, db, "mysql", managedTokensTable)
+	runTokenMigrationCompatTest(t, db, "mysql", managedTokensTable)
 }
 
-func TJBBxgo8f8b2AfTxonAXkMemGUEy6y5bVfhar128Postgres(t *testing.T) {
+func TestTokenMigrateChar48VarcharPG(t *testing.T) {
 	dsn := os.Getenv("TEST_POSTGRES_DSN")
 	if dsn == "" {
 		t.Skip("set TEST_POSTGRES_DSN to run postgres migration compatibility test")
 	}
 
 	db, managedTokensTable := openTokenControllerExternalDB(t, "postgres", dsn)
-	runTokenMigrationCompatibilityTest(t, db, "postgres", managedTokensTable)
+	runTokenMigrationCompatTest(t, db, "postgres", managedTokensTable)
 }
 
-func TJBBxgo8f8b2AfTxonAXkMemGUEy6y5bVf(t *testing.T) {
+func TestGetAllTokensMasksKeyResp(t *testing.T) {
 	db := setupTokenControllerTestDB(t)
 	token := seedToken(t, db, 1, "list-token", "abcd1234efgh5678")
 	seedToken(t, db, 2, "other-user-token", "zzzz1234yyyy5678")
@@ -493,7 +493,7 @@ func TJBBxgo8f8b2AfTxonAXkMemGUEy6y5bVf(t *testing.T) {
 	}
 }
 
-func TJBBxgo8f8b2AfTxonAXkMemGUEy6y5bVf(t *testing.T) {
+func TestSearchTokensMasksKeyResp(t *testing.T) {
 	db := setupTokenControllerTestDB(t)
 	token := seedToken(t, db, 1, "searchable-token", "ijkl1234mnop5678")
 
@@ -581,7 +581,7 @@ func TestUpdateTokenMasksKeyInResponse(t *testing.T) {
 	}
 }
 
-func TJBBxgo8f8b2AfTxonAXkMemGUEy6y5bVfdReturnsFullKey(t *testing.T) {
+func TestGetTokenKeyOwnershipFullKey(t *testing.T) {
 	db := setupTokenControllerTestDB(t)
 	token := seedToken(t, db, 1, "owned-token", "owner1234token5678")
 
