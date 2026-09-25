@@ -49,6 +49,7 @@ func (a *Adaptor) ConvertClaudeRequest(c *gin.Context, info *relaycommon.RelayIn
 	if info.UpstreamModelName == "" {
 		info.UpstreamModelName = request.Model
 	}
+	applyAutoPromptCaching(request)
 	return request, nil
 }
 

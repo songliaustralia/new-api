@@ -21,6 +21,11 @@ type ClaudeSettings struct {
 	DefaultMaxTokens                      map[string]int                 `json:"default_max_tokens"`
 	ThinkingAdapterEnabled                bool                           `json:"thinking_adapter_enabled"`
 	ThinkingAdapterBudgetTokensPercentage float64                        `json:"thinking_adapter_budget_tokens_percentage"`
+	// AutoCacheEnabled turns on automatic Anthropic prompt-cache_control
+	// injection for outbound Claude requests that do not already set their
+	// own cache_control. See relay/channel/claude/auto_cache.go for what
+	// gets marked cacheable and why.
+	AutoCacheEnabled bool `json:"auto_cache_enabled"`
 }
 
 // 默认配置
@@ -31,6 +36,7 @@ var defaultClaudeSettings = ClaudeSettings{
 		"default": 8192,
 	},
 	ThinkingAdapterBudgetTokensPercentage: 0.8,
+	AutoCacheEnabled:                      true,
 }
 
 // 全局实例

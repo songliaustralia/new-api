@@ -1,7 +1,9 @@
 package claude
 
 import (
+	"encoding/json"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -222,4 +224,146 @@ func TestConvertGeminiRequestThinkingConfigUsesReasoningIntent(t *testing.T) {
 func TestConvertGeminiRequestNilRequest(t *testing.T) {
 	_, err := (&Adaptor{}).ConvertGeminiRequest(nil, geminiToClaudeInfo(), nil)
 	require.Error(t, err)
+}
+
+// enableClaudeAutoCache sets AutoCacheEnabled for the duration of a test and
+// restores the previous value on cleanup, since it lives on the shared
+// package-level Claude settings instance.
+func enableClaudeAutoCache(t *testing.T, enabled bool) {
+	t.Helper()
+	settings := model_setting.GetClaudeSettings()
+	orig := settings.AutoCacheEnabled
+	settings.AutoCacheEnabled = enabled
+	t.Cleanup(func() { settings.AutoCacheEnabled = orig })
+}
+
+func TestApplyAutoPromptCachingSkipsShortContent(t *testing.T) {
+	enableClaudeAutoCache(t, true)
+
+	req := &dto.ClaudeRequest{
+		Model:  "claude-sonnet-4-5",
+		System: "You are a helpful assistant.",
+		Messages: []dto.ClaudeMessage{
+			{Role: "user", Content: "hi"},
+			{Role: "assistant", Content: "hello"},
+			{Role: "user", Content: "how are you"},
+		},
+	}
+
+	applyAutoPromptCaching(req)
+
+	assert.True(t, req.IsStringSystem(), "short system prompt should be left as a plain string")
+	for i, message := range req.Messages {
+		assert.Truef(t, message.IsStringContent(), "message %d content should be untouched", i)
+	}
+}
+
+func TestApplyAutoPromptCachingMarksLongSystemAndHistory(t *testing.T) {
+	enableClaudeAutoCache(t, true)
+
+	longSystem := strings.Repeat("You are a meticulous coding assistant. ", 200) // well over the 4000-byte floor
+	longHistoryTurn := strings.Repeat("Here is the file content under review. ", 200)
+	req := &dto.ClaudeRequest{
+		Model:  "claude-opus-5",
+		System: longSystem,
+		Messages: []dto.ClaudeMessage{
+			{Role: "user", Content: longHistoryTurn},
+			{Role: "assistant", Content: "Understood, I've reviewed it."},
+			{Role: "user", Content: "what's next"},
+		},
+	}
+
+	applyAutoPromptCaching(req)
+
+	// System prompt: converted to block form with the marker set.
+	require.False(t, req.IsStringSystem())
+	systemBlocks := req.ParseSystem()
+	require.Len(t, systemBlocks, 1)
+	assert.Equal(t, longSystem, systemBlocks[0].GetText())
+	assert.JSONEq(t, `{"type":"ephemeral"}`, string(systemBlocks[0].CacheControl))
+
+	// History: the marker lands on the message just before the newest turn
+	// (index 1, "Understood..."), and the newest message (index 2) is left
+	// exactly as the client sent it.
+	assert.True(t, req.Messages[2].IsStringContent(), "newest turn must stay untouched")
+	require.False(t, req.Messages[1].IsStringContent())
+	blocks, err := req.Messages[1].ParseContent()
+	require.NoError(t, err)
+	require.Len(t, blocks, 1)
+	assert.Equal(t, "Understood, I've reviewed it.", blocks[0].GetText())
+	assert.JSONEq(t, `{"type":"ephemeral"}`, string(blocks[0].CacheControl))
+}
+
+func TestApplyAutoPromptCachingRespectsExistingCacheControl(t *testing.T) {
+	enableClaudeAutoCache(t, true)
+
+	longSystem := strings.Repeat("You are a meticulous coding assistant. ", 200)
+	clientText := strings.Repeat("Here is the file content under review. ", 200)
+	req := &dto.ClaudeRequest{
+		Model:  "claude-opus-5",
+		System: longSystem,
+		Messages: []dto.ClaudeMessage{
+			{Role: "user", Content: []dto.ClaudeMediaMessage{{
+				Type:         "text",
+				Text:         &clientText,
+				CacheControl: json.RawMessage(`{"type":"ephemeral","ttl":"1h"}`),
+			}}},
+			{Role: "assistant", Content: "Understood, I've reviewed it."},
+			{Role: "user", Content: "what's next"},
+		},
+	}
+
+	applyAutoPromptCaching(req)
+
+	assert.True(t, req.IsStringSystem(), "a request that already manages its own caching must be left untouched")
+	assert.True(t, req.Messages[1].IsStringContent(), "a request that already manages its own caching must be left untouched")
+}
+
+func TestApplyAutoPromptCachingDisabledSetting(t *testing.T) {
+	enableClaudeAutoCache(t, false)
+
+	longSystem := strings.Repeat("You are a meticulous coding assistant. ", 200)
+	req := &dto.ClaudeRequest{
+		Model:  "claude-opus-5",
+		System: longSystem,
+		Messages: []dto.ClaudeMessage{
+			{Role: "user", Content: strings.Repeat("x", 5000)},
+			{Role: "assistant", Content: "ok"},
+			{Role: "user", Content: "next"},
+		},
+	}
+
+	applyAutoPromptCaching(req)
+
+	assert.True(t, req.IsStringSystem(), "auto-caching must not act while disabled in settings")
+	for i, message := range req.Messages {
+		assert.Truef(t, message.IsStringContent(), "message %d should be untouched when the feature is disabled", i)
+	}
+}
+
+func TestConvertClaudeRequestAppliesAutoPromptCaching(t *testing.T) {
+	enableClaudeAutoCache(t, true)
+
+	longSystem := strings.Repeat("You are a meticulous coding assistant. ", 200)
+	req := &dto.ClaudeRequest{
+		Model:  "claude-sonnet-4-5",
+		System: longSystem,
+		Messages: []dto.ClaudeMessage{
+			{Role: "user", Content: "hello"},
+		},
+	}
+	info := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{
+			UpstreamModelName: "claude-sonnet-4-5",
+		},
+	}
+
+	out, err := (&Adaptor{}).ConvertClaudeRequest(nil, info, req)
+	require.NoError(t, err)
+	converted, ok := out.(*dto.ClaudeRequest)
+	require.True(t, ok)
+	require.False(t, converted.IsStringSystem())
+	systemBlocks := converted.ParseSystem()
+	require.Len(t, systemBlocks, 1)
+	assert.JSONEq(t, `{"type":"ephemeral"}`, string(systemBlocks[0].CacheControl))
 }
