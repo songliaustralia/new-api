@@ -469,7 +469,10 @@ it('keeps full mobile information without group or quota section headings', asyn
       screen.queryByText(zh.translation['Group'], { exact: true })
     ).not.toBeInTheDocument()
     expect(screen.getByText('default')).toBeInTheDocument()
-    expect(screen.getByText('1x')).toBeInTheDocument()
+    // The group multiplier is no longer surfaced on this self-service page
+    // (customers found the raw billing ratio, e.g. "1.3x", confusing) —
+    // see api-keys-columns.tsx, which stopped fetching/passing it.
+    expect(screen.queryByText('1x')).not.toBeInTheDocument()
     expect(screen.getByText(zh.translation['Models'])).toBeInTheDocument()
     expect(
       screen.getByText(zh.translation['IP Restriction'])
