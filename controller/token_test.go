@@ -146,14 +146,29 @@ func setupTokenControllerTestDB(t *testing.T) *gorm.DB {
 	}).Error)
 
 	// validateExplicitTokenGroup additionally requires the group to exist in
-	// ratio_setting's group-ratio table (service.IsUserSelectableGroup), so
-	// give the "default" group used throughout this file one, and restore
-	// whatever was configured before the test ran.
-	originalRatios := ratio_setting.GroupRatio2JSONString()
-	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1}`))
-	t.Cleanup(func() {
-		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(originalRatios))
-	})
+	// ratio_setting's group-ratio table (service.IsUserSelectableGroup). That
+	// table already carries a "default" entry from ratio_setting's own
+	// package-level defaults, so in the common case nothing needs to change
+	// here — and it's important not to blindly overwrite it:
+	// ratio_setting.UpdateGroupRatioByJSONString REPLACES the *entire* table
+	// (see types.LoadFromJsonString), so unconditionally calling it with
+	// just `{"default":1}` silently wipes out any other groups a caller of
+	// this shared helper had already registered (e.g. "vip", which
+	// token_auto_groups_test.go's configureTokenAutoGroupsTest sets up
+	// before some of its tests call this same helper). Instead, only add
+	// "default" if it isn't already there, merging into whatever is
+	// already configured, and only restore that one change afterward.
+	if !ratio_setting.ContainsGroupRatio("default") {
+		originalRatios := ratio_setting.GroupRatio2JSONString()
+		merged := ratio_setting.GetGroupRatioCopy()
+		merged["default"] = 1
+		mergedJSON, err := common.Marshal(merged)
+		require.NoError(t, err)
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(string(mergedJSON)))
+		t.Cleanup(func() {
+			require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(originalRatios))
+		})
+	}
 
 	return db
 }
