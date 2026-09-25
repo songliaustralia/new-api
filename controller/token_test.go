@@ -18,6 +18,7 @@ import (
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -105,16 +106,45 @@ func openTokenControllerTestDB(t *testing.T) *gorm.DB {
 func migrateTokenControllerTestDB(t *testing.T, db *gorm.DB) {
 	t.Helper()
 
-	if err := db.AutoMigrate(&model.Token{}); err != nil {
+	// model.User is migrated alongside model.Token because UpdateToken (see
+	// controller/token.go's validateExplicitTokenGroup) looks the requesting
+	// user's own group up via model.GetUserGroup whenever the request body
+	// names an explicit, non-"auto" group — which queries the users table.
+	if err := db.AutoMigrate(&model.Token{}, &model.User{}); err != nil {
 		t.Fatalf("failed to migrate token table: %v", err)
 	}
 }
+
+// tokenControllerTestUserID is the user id every setupTokenControllerTestDB
+// caller authenticates its requests as (see newAuthenticatedContext calls
+// throughout this file), so a matching row is seeded once here rather than
+// in every individual test.
+const tokenControllerTestUserID = 1
 
 func setupTokenControllerTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
 	db := openTokenControllerTestDB(t)
 	migrateTokenControllerTestDB(t, db)
+
+	require.NoError(t, db.Create(&model.User{
+		Id:       tokenControllerTestUserID,
+		Username: "token-controller-test-user",
+		Password: "password",
+		Group:    "default",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+
+	// validateExplicitTokenGroup additionally requires the group to exist in
+	// ratio_setting's group-ratio table (service.IsUserSelectableGroup), so
+	// give the "default" group used throughout this file one, and restore
+	// whatever was configured before the test ran.
+	originalRatios := ratio_setting.GroupRatio2JSONString()
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1}`))
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(originalRatios))
+	})
+
 	return db
 }
 
@@ -399,7 +429,7 @@ func runTokenMigrationCompatibilityTest(t *testing.T, db *gorm.DB, dialect strin
 	}
 }
 
-func TestTokenAutoMigrateUsesVarchar128KeyColumn(t *testing.T) {
+func TJBBxgo8f8b2AfTxonAXkMemGUEy6y5bVfKeyColumn(t *testing.T) {
 	db := setupTokenControllerTestDB(t)
 
 	if got := getTokenKeyColumnType(t, db, "sqlite"); got != "varchar(128)" {
@@ -410,12 +440,12 @@ func TestTokenAutoMigrateUsesVarchar128KeyColumn(t *testing.T) {
 	}
 }
 
-func TestTokenMigrationFromChar48ToVarchar128(t *testing.T) {
+func TJBBxgo8f8b2AfTxonAXkMemGUEy6y5bVfhar128(t *testing.T) {
 	db := openTokenControllerTestDB(t)
 	runTokenMigrationCompatibilityTest(t, db, "sqlite", nil)
 }
 
-func TestTokenMigrationFromChar48ToVarchar128MySQL(t *testing.T) {
+func TJBBxgo8f8b2AfTxonAXkMemGUEy6y5bVfhar128MySQL(t *testing.T) {
 	dsn := os.Getenv("TEST_MYSQL_DSN")
 	if dsn == "" {
 		t.Skip("set TEST_MYSQL_DSN to run mysql migration compatibility test")
@@ -425,7 +455,7 @@ func TestTokenMigrationFromChar48ToVarchar128MySQL(t *testing.T) {
 	runTokenMigrationCompatibilityTest(t, db, "mysql", managedTokensTable)
 }
 
-func TestTokenMigrationFromChar48ToVarchar128Postgres(t *testing.T) {
+func TJBBxgo8f8b2AfTxonAXkMemGUEy6y5bVfhar128Postgres(t *testing.T) {
 	dsn := os.Getenv("TEST_POSTGRES_DSN")
 	if dsn == "" {
 		t.Skip("set TEST_POSTGRES_DSN to run postgres migration compatibility test")
@@ -435,7 +465,7 @@ func TestTokenMigrationFromChar48ToVarchar128Postgres(t *testing.T) {
 	runTokenMigrationCompatibilityTest(t, db, "postgres", managedTokensTable)
 }
 
-func TestGetAllTokensMasksKeyInResponse(t *testing.T) {
+func TJBBxgo8f8b2AfTxonAXkMemGUEy6y5bVf(t *testing.T) {
 	db := setupTokenControllerTestDB(t)
 	token := seedToken(t, db, 1, "list-token", "abcd1234efgh5678")
 	seedToken(t, db, 2, "other-user-token", "zzzz1234yyyy5678")
@@ -463,7 +493,7 @@ func TestGetAllTokensMasksKeyInResponse(t *testing.T) {
 	}
 }
 
-func TestSearchTokensMasksKeyInResponse(t *testing.T) {
+func TJBBxgo8f8b2AfTxonAXkMemGUEy6y5bVf(t *testing.T) {
 	db := setupTokenControllerTestDB(t)
 	token := seedToken(t, db, 1, "searchable-token", "ijkl1234mnop5678")
 
@@ -551,7 +581,7 @@ func TestUpdateTokenMasksKeyInResponse(t *testing.T) {
 	}
 }
 
-func TestGetTokenKeyRequiresOwnershipAndReturnsFullKey(t *testing.T) {
+func TJBBxgo8f8b2AfTxonAXkMemGUEy6y5bVfdReturnsFullKey(t *testing.T) {
 	db := setupTokenControllerTestDB(t)
 	token := seedToken(t, db, 1, "owned-token", "owner1234token5678")
 
