@@ -292,6 +292,29 @@ func SetApiRouter(router *gin.Engine) {
 			byokRoute.DELETE("/:provider", middleware.DisableCache(), controller.DeleteByokKey)
 		}
 
+		// VPN subscription (self-service: browse plans, check status, pay)
+		vpnRoute := apiRouter.Group("/vpn")
+		vpnRoute.Use(middleware.UserAuth())
+		{
+			vpnRoute.GET("/plans", controller.GetVpnPlans)
+			vpnRoute.GET("/self", controller.GetVpnSelf)
+			vpnRoute.POST("/stripe/pay", middleware.CriticalRateLimit(), controller.VpnRequestStripePay)
+		}
+		// VPN subscription (admin: plan CRUD, subscriber management, panel test)
+		vpnAdminRoute := apiRouter.Group("/vpn/admin")
+		vpnAdminRoute.Use(middleware.AdminAuth())
+		{
+			vpnAdminRoute.GET("/plans", controller.AdminListVpnPlans)
+			vpnAdminRoute.POST("/plans", controller.AdminCreateVpnPlan)
+			vpnAdminRoute.PUT("/plans/:id", controller.AdminUpdateVpnPlan)
+			vpnAdminRoute.PATCH("/plans/:id", controller.AdminUpdateVpnPlanStatus)
+			vpnAdminRoute.DELETE("/plans/:id", controller.AdminDeleteVpnPlan)
+			vpnAdminRoute.GET("/subscribers", controller.AdminListVpnSubscribers)
+			vpnAdminRoute.POST("/subscribers/:user_id/grant", controller.AdminGrantVpnSubscriber)
+			vpnAdminRoute.POST("/subscribers/:user_id/revoke", controller.AdminRevokeVpnSubscriber)
+			vpnAdminRoute.POST("/panel/test-connection", controller.AdminTestVpnPanelConnection)
+		}
+
 		usageRoute := apiRouter.Group("/usage")
 		usageRoute.Use(middleware.CORS(), middleware.CriticalRateLimit())
 		{

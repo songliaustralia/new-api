@@ -27,6 +27,7 @@ import {
   LayoutDashboard,
   ListTodo,
   MessageSquare,
+  Network,
   PlugZap,
   Radio,
   ServerCog,
@@ -36,6 +37,7 @@ import {
   User,
   Users,
   Wallet,
+  Wifi,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -117,6 +119,11 @@ export function useSidebarData(): SidebarData {
             icon: Wallet,
           },
           {
+            title: t('VPN'),
+            url: '/vpn',
+            icon: Wifi,
+          },
+          {
             title: t('Profile'),
             url: '/profile',
             icon: User,
@@ -156,6 +163,11 @@ export function useSidebarData(): SidebarData {
             title: t('Subscriptions'),
             url: '/subscriptions',
             icon: CreditCard,
+          },
+          {
+            title: t('VPN Subscriptions'),
+            url: '/vpn-subscribers',
+            icon: Network,
           },
           {
             title: t('System Info'),

@@ -98,6 +98,24 @@ func InitOptionMap() {
 	common.OptionMap["StripePriceId"] = setting.StripePriceId
 	common.OptionMap["StripeUnitPrice"] = strconv.FormatFloat(setting.StripeUnitPrice, 'f', -1, 64)
 	common.OptionMap["StripePromotionCodesEnabled"] = strconv.FormatBool(setting.StripePromotionCodesEnabled)
+
+	// VPN subscription feature (3x-ui panel integration). Read directly off
+	// common.OptionMap in service/vpn.go, following the same
+	// "model_deployment.ionet.*" convention as the io.net deployment feature.
+	common.OptionMap["VpnFeatureEnabled"] = "false"
+	common.OptionMap["VpnPanelBaseUrl"] = ""
+	common.OptionMap["VpnPanelApiToken"] = ""
+	common.OptionMap["VpnPanelInboundId"] = ""
+	common.OptionMap["VpnServerHost"] = ""
+	common.OptionMap["VpnServerPort"] = "443"
+	common.OptionMap["VpnNetwork"] = "tcp"
+	common.OptionMap["VpnRealityPublicKey"] = ""
+	common.OptionMap["VpnRealitySni"] = ""
+	common.OptionMap["VpnRealityShortId"] = ""
+	common.OptionMap["VpnRealitySpiderX"] = ""
+	common.OptionMap["VpnRealityFingerprint"] = "chrome"
+	common.OptionMap["VpnRealityFlow"] = ""
+
 	common.OptionMap["CreemApiKey"] = setting.CreemApiKey
 	common.OptionMap["CreemProducts"] = setting.CreemProducts
 	common.OptionMap["CreemTestMode"] = strconv.FormatBool(setting.CreemTestMode)
