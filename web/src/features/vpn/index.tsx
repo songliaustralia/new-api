@@ -20,6 +20,7 @@ import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
 
+import { VpnClientAppsCard } from './components/vpn-client-apps-card'
 import { VpnPlansGrid } from './components/vpn-plans-grid'
 import { VpnStatusCard } from './components/vpn-status-card'
 
@@ -33,6 +34,7 @@ export function Vpn() {
         <div className='mx-auto flex w-full max-w-5xl flex-col gap-4 sm:gap-5'>
           <VpnStatusCard />
           <VpnPlansGrid />
+          <VpnClientAppsCard />
         </div>
       </SectionPageLayout.Content>
     </SectionPageLayout>
