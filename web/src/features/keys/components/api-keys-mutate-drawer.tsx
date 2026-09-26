@@ -159,13 +159,19 @@ export function ApiKeysMutateDrawer({
   })
 
   const models = modelsData?.data || []
+  // Deliberately omit the backend's `ratio` (billing multiplier) here: this
+  // group picker is customer-facing, and the internal ratio should never be
+  // shown to the customer (same reasoning as the "API 密钥" list page's
+  // group column — see hide-api-key-group-ratio-badge.md). Leaving `ratio`
+  // undefined makes GroupRatioBadge / GroupMultiplierBadge render nothing,
+  // for every place this `groups` list feeds (the group combobox's trigger
+  // and dropdown, and the Auto group order editor's chips).
   const groups = useMemo<ApiKeyGroupOption[]>(
     () =>
       Object.entries(groupsData?.data || {}).map(([key, info]) => ({
         value: key,
         label: key,
         desc: info.desc || key,
-        ratio: info.ratio,
       })),
     [groupsData]
   )
